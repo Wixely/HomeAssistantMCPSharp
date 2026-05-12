@@ -1,0 +1,21 @@
+services:
+  hamcp:
+    image: homeassistantmcpsharp:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hamcp
+    restart: unless-stopped
+    ports:
+      - "5100:5100"
+    environment:
+      # Point at your HA. From inside Docker, host.docker.internal works on Desktop;
+      # on Linux Docker, use the LAN IP or "http://homeassistant:8123".
+      HAMCP_HomeAssistant__BaseUrl: "http://homeassistant.local:8123/"
+      HAMCP_HomeAssistant__AccessToken: "${HA_ACCESS_TOKEN}"
+      HAMCP_HomeAssistant__ReadOnly: "true"
+      Serilog__MinimumLevel__Override__Microsoft.Hosting.Lifetime: "Information"
+    volumes:
+      - ./logs:/app/logs
+      # Mount an appsettings.Local.json for richer overrides if you prefer files over env vars.
+      # - ./appsettings.Local.json:/app/appsettings.Local.json:ro

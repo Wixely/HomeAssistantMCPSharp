@@ -1,0 +1,177 @@
+name: Build Release Packages
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.base_name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            base_name: HomeAssistantMCPSharp-win-x64
+            artifact_name: HomeAssistantMCPSharp-win-x64
+            self_contained: false
+          - rid: linux-x64
+            base_name: HomeAssistantMCPSharp-linux-x64
+            artifact_name: HomeAssistantMCPSharp-linux-x64
+            self_contained: false
+          - rid: win-x64
+            base_name: HomeAssistantMCPSharp-win-x64-standalone
+            artifact_name: HomeAssistantMCPSharp-win-x64-standalone
+            self_contained: true
+          - rid: linux-x64
+            base_name: HomeAssistantMCPSharp-linux-x64-standalone
+            artifact_name: HomeAssistantMCPSharp-linux-x64-standalone
+            self_contained: true
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Compute package version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "PACKAGE_VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          else
+            echo "PACKAGE_VERSION=dev-${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore HomeAssistantMCPSharp.sln
+
+      - name: Build
+        run: dotnet build HomeAssistantMCPSharp.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test HomeAssistantMCPSharp.sln -c Release --no-build --verbosity normal
+
+      - name: Publish ${{ matrix.rid }}
+        run: >
+          dotnet publish HomeAssistantMCPSharp.csproj
+          -c Release
+          -r ${{ matrix.rid }}
+          --self-contained ${{ matrix.self_contained }}
+          -o publish/${{ matrix.rid }}-${{ matrix.self_contained }}
+
+      - name: Package ${{ matrix.rid }}
+        shell: bash
+        run: |
+          cd publish/${{ matrix.rid }}-${{ matrix.self_contained }}
+          zip -r "../../${{ matrix.base_name }}-${PACKAGE_VERSION}.zip" .
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.base_name }}-${{ env.PACKAGE_VERSION }}.zip
+          if-no-files-found: error
+
+  docker:
+    name: Publish Docker image
+    runs-on: ubuntu-latest
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Lowercase image namespace
+        id: namespace
+        shell: bash
+        run: echo "lc=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.namespace.outputs.lc }}/homeassistantmcpsharp
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+          # latest=auto (the default) tags :latest only on the highest non-prerelease semver,
+          # so v1.2.3 pushes :latest but v1.3.0-beta does not.
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Compute package version
+        shell: bash
+        run: echo "PACKAGE_VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Show release assets
+        shell: bash
+        run: find release-assets -maxdepth 2 -type f | sort
+
+      - name: Create release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
+          gh release create "${GITHUB_REF_NAME}" --generate-notes
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" \
+            release-assets/HomeAssistantMCPSharp-win-x64/HomeAssistantMCPSharp-win-x64-${PACKAGE_VERSION}.zip \
+            release-assets/HomeAssistantMCPSharp-linux-x64/HomeAssistantMCPSharp-linux-x64-${PACKAGE_VERSION}.zip \
+            release-assets/HomeAssistantMCPSharp-win-x64-standalone/HomeAssistantMCPSharp-win-x64-standalone-${PACKAGE_VERSION}.zip \
+            release-assets/HomeAssistantMCPSharp-linux-x64-standalone/HomeAssistantMCPSharp-linux-x64-standalone-${PACKAGE_VERSION}.zip \
+            --clobber
