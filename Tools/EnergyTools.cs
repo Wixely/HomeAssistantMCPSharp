@@ -188,8 +188,12 @@ public static class EnergyTools
         {
             return JsonOpts.Serialize(new
             {
-                entity_id = entityId, hours = window,
-                friendly_name = friendly, unit, device_class = deviceClass, state_class = stateClass,
+                entity_id = entityId,
+                hours = window,
+                friendly_name = friendly,
+                unit,
+                device_class = deviceClass,
+                state_class = stateClass,
                 samples = Array.Empty<object>(),
                 note = "No numeric samples in the requested window.",
             });

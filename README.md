@@ -176,7 +176,7 @@ Pull the pre-built image published to GHCR on every `v*` tag:
 
 ```sh
 docker run -d --name hamcp \
-  -p 5100:5100 \
+  -p 5703:5703 \
   -e HAMCP_HomeAssistant__BaseUrl=http://homeassistant.local:8123/ \
   -e HAMCP_HomeAssistant__AccessToken=YOUR_LONG_LIVED_TOKEN \
   -e HAMCP_HomeAssistant__ReadOnly=true \
@@ -189,7 +189,7 @@ Or build locally with the bundled `docker-compose.yml`:
 docker compose up --build -d
 ```
 
-Either way, point your MCP client at `http://<host>:5100/mcp`.
+Either way, point your MCP client at `http://<host>:5703/mcp`.
 
 ### Standalone (console)
 
@@ -242,13 +242,13 @@ Create a long-lived access token in Home Assistant under your **profile → Secu
 | `HomeAssistant:EnableCameraSnapshot` | `false` | Off by default — `camera.snapshot` writes a file on the HA host. |
 | `HomeAssistant:WaitForStatePollSeconds` | `1` | Poll interval used by `ha_wait_for_state`. |
 | `HomeAssistant:WaitForStateMaxSeconds` | `60` | Hard cap on `ha_wait_for_state` timeout (caller value is clamped). |
-| `Server:Host` / `Port` / `Path` | `0.0.0.0` / `5100` / `/mcp` | HTTP bind details. |
+| `Server:Host` / `Port` / `Path` | `localhost` / `5703` / `/mcp` | HTTP bind details. Use `0.0.0.0` inside Docker. |
 | `Server:WindowsServiceName` | `HomeAssistantMCPSharp` | SCM service name. |
 
 ## Claude Code
 
 ```sh
-claude mcp add --transport http home-assistant http://localhost:5100/mcp
+claude mcp add --transport http home-assistant http://localhost:5703/mcp
 ```
 
 ## Read-only mode

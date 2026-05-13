@@ -1,39 +1,35 @@
 # syntax=docker/dockerfile:1.7
-# Multi-stage build for HomeAssistantMCPSharp — Docker is the primary deployment target.
 
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
 WORKDIR /src
 
-# Restore first so we can cache the layer.
+COPY NuGet.config global.json Directory.Build.props Directory.Packages.props ./
 COPY HomeAssistantMCPSharp.csproj ./
 RUN dotnet restore HomeAssistantMCPSharp.csproj
 
-# Now the rest of the source.
 COPY . .
 RUN dotnet publish HomeAssistantMCPSharp.csproj \
     -c Release \
-    -o /app/publish \
     --no-restore \
-    -p:UseAppHost=false
+    -o /app/publish \
+    /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS runtime
 WORKDIR /app
 
-# Non-root user for safety.
-RUN groupadd -r hamcp && useradd -r -g hamcp -d /app -s /sbin/nologin hamcp \
-    && mkdir -p /app/logs \
-    && chown -R hamcp:hamcp /app
-
-COPY --from=build --chown=hamcp:hamcp /app/publish ./
-
-ENV ASPNETCORE_URLS=http://+:5100 \
+ENV DOTNET_ENVIRONMENT=Production \
+    ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_RUNNING_IN_CONTAINER=true \
-    DOTNET_NOLOGO=true \
-    Server__Host=0.0.0.0 \
-    Server__Port=5100 \
-    Serilog__MinimumLevel__Override__Microsoft.Hosting.Lifetime=Information
+    HAMCP_Server__Host=0.0.0.0 \
+    HAMCP_Server__Port=5703 \
+    HAMCP_Server__Path=/mcp \
+    HAMCP_HomeAssistant__ReadOnly=true
 
-EXPOSE 5100
-USER hamcp
+RUN mkdir -p /app/logs && chown -R $APP_UID:0 /app
+COPY --from=build --chown=$APP_UID:0 /app/publish ./
+
+USER $APP_UID
+EXPOSE 5703
+VOLUME ["/app/logs"]
 
 ENTRYPOINT ["dotnet", "HomeAssistantMCPSharp.dll"]

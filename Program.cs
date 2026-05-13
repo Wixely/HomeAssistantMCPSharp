@@ -106,6 +106,10 @@ public static class Program
                 {
                     k.Listen(ip, server.Port);
                 }
+                else if (string.Equals(server.Host, "localhost", StringComparison.OrdinalIgnoreCase))
+                {
+                    k.ListenLocalhost(server.Port);
+                }
                 else
                 {
                     k.ListenAnyIP(server.Port);
@@ -131,6 +135,14 @@ public static class Program
                 server.Host, server.Port, server.Path, ha.IsReadOnly, ha.BaseAddress,
                 isService ? "WindowsService" : "Console", contentRoot);
 
+            app.MapGet("/healthz", () => new
+            {
+                status = "ok",
+                server = "HomeAssistantMCPSharp",
+                path = server.Path,
+                readOnly = ha.IsReadOnly,
+                timeUtc = DateTimeOffset.UtcNow,
+            });
             app.MapMcp(server.Path);
 
             app.Run();
