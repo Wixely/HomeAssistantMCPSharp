@@ -1,5 +1,6 @@
 using System.Net;
 using HomeAssistantMCPSharp.Configuration;
+using HomeAssistantMCPSharp.Hosting;
 using HomeAssistantMCPSharp.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -20,6 +21,10 @@ public static class Program
         // C:\Windows\System32, so resolve config and logs relative to the exe.
         var contentRoot = AppContext.BaseDirectory;
         var isService = WindowsServiceHelpers.IsWindowsService();
+        if (!isService)
+        {
+            McpSharpIcon.ApplyConsoleWindowIcon();
+        }
 
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
@@ -135,6 +140,9 @@ public static class Program
                 server.Host, server.Port, server.Path, ha.IsReadOnly, ha.BaseAddress,
                 isService ? "WindowsService" : "Console", contentRoot);
 
+            app.UseMiddleware<McpPasswordMiddleware>();
+
+            app.MapFavicon();
             app.MapGet("/healthz", () => new
             {
                 status = "ok",

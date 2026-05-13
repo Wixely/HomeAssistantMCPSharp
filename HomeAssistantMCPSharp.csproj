@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>HomeAssistantMCPSharp</RootNamespace>
     <AssemblyName>HomeAssistantMCPSharp</AssemblyName>
+    <ApplicationIcon>wmcp.ico</ApplicationIcon>
     <!-- We use an explicit Program.Main; no top-level statements. -->
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <InvariantGlobalization>true</InvariantGlobalization>
@@ -26,6 +27,10 @@
     <PackageReference Include="Serilog.Enrichers.Environment" />
     <PackageReference Include="Serilog.Enrichers.Process" />
     <PackageReference Include="Serilog.Enrichers.Thread" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="wmcp.ico" LogicalName="MCPSharp.wmcp.ico" />
   </ItemGroup>
 
   <ItemGroup>

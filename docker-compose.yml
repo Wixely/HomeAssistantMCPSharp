@@ -16,6 +16,7 @@ services:
       HAMCP_HomeAssistant__ReadOnly: "true"
       HAMCP_Server__Host: "0.0.0.0"
       HAMCP_Server__Port: "5703"
+      HAMCP_Server__Password: ""
       Serilog__MinimumLevel__Override__Microsoft.Hosting.Lifetime: "Information"
     volumes:
       - ./logs:/app/logs

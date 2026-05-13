@@ -244,6 +244,9 @@ Create a long-lived access token in Home Assistant under your **profile → Secu
 | `HomeAssistant:WaitForStateMaxSeconds` | `60` | Hard cap on `ha_wait_for_state` timeout (caller value is clamped). |
 | `Server:Host` / `Port` / `Path` | `localhost` / `5703` / `/mcp` | HTTP bind details. Use `0.0.0.0` inside Docker. |
 | `Server:WindowsServiceName` | `HomeAssistantMCPSharp` | SCM service name. |
+| `Server:Password` | blank | Optional MCP endpoint password; blank disables password auth. |
+
+When `Server:Password` is set, MCP requests must provide the password as `Authorization: Bearer <password>`, the Basic auth password, or `X-MCP-Password`.
 
 ## Claude Code
 

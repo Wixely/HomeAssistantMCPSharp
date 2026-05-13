@@ -23,6 +23,7 @@ ENV DOTNET_ENVIRONMENT=Production \
     HAMCP_Server__Host=0.0.0.0 \
     HAMCP_Server__Port=5703 \
     HAMCP_Server__Path=/mcp \
+    HAMCP_Server__Password= \
     HAMCP_HomeAssistant__ReadOnly=true
 
 RUN mkdir -p /app/logs && chown -R $APP_UID:0 /app
