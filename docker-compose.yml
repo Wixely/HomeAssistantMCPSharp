@@ -20,5 +20,5 @@ services:
       Serilog__MinimumLevel__Override__Microsoft.Hosting.Lifetime: "Information"
     volumes:
       - ./logs:/app/logs
-      # Mount an appsettings.Local.json for richer overrides if you prefer files over env vars.
-      # - ./appsettings.Local.json:/app/appsettings.Local.json:ro
+      # Mount a HomeAssistantMCPSharp.Local.json for richer overrides if you prefer files over env vars.
+      # - ./HomeAssistantMCPSharp.Local.json:/app/HomeAssistantMCPSharp.Local.json:ro

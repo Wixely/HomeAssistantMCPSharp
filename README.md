@@ -1,20 +1,18 @@
 # HomeAssistantMCPSharp
 
-A standalone C# **MCP (Model Context Protocol) server** for **Home Assistant**. Bridges Claude (and other MCP-aware agents) to a Home Assistant instance over **HTTP streaming**.
-
-Source: [github.com/Wixely/HomeAssistantMCPSharp](https://github.com/Wixely/HomeAssistantMCPSharp) · Container: [`ghcr.io/wixely/homeassistantmcpsharp`](https://github.com/Wixely/HomeAssistantMCPSharp/pkgs/container/homeassistantmcpsharp)
+A standalone C# **MCP (Model Context Protocol) server** for **Home Assistant** over Streamable HTTP.
 
 Exposes **85 tools** across state, services, history, registry (areas / floors / labels), media + TTS, automations / scripts / scenes, presence, weather, energy, device health, sun, input helpers, and notifications.
 
 ## Highlights
 
-- HTTP streaming MCP transport (Streamable HTTP), works with Claude Code and any MCP-aware client.
+- HTTP MCP server using the Streamable HTTP transport.
 - **Read-only by default** — every write tool is blocked until `HomeAssistant:ReadOnly` is set to `false`.
 - Per-feature toggles (`EnableStates`, `EnableServices`, `EnableHistory`, `EnableLogbook`, `EnableTemplate`, `EnableConversation`, `EnableCalendar`, `EnableDiagnostics`, `EnableEvents`, `EnableRegistry`, `EnableShortcuts`, `EnableNotifications`, `EnableEnergy`); plus `EnableCameraSnapshot` (off by default).
 - Entity and domain allow/deny lists.
 - Serilog logging to console **and** rolling files (daily, 50 MB rollover, 14-file retention).
-- Runs as a Docker container (preferred), a Windows Service, or a console app.
-- All HA traffic uses the **documented REST API** — no scraping or undocumented endpoints. Registry data (areas, floors, labels) is fetched via the documented `/api/template` endpoint, since the registry has no direct REST route.
+- Runs as a Docker container, a Windows Service, or a console app.
+- Registry data (areas, floors, labels) is fetched through Home Assistant templates because the registry has no direct REST route.
 
 ## MCP tools exposed
 
@@ -172,7 +170,7 @@ Exposes **85 tools** across state, services, history, registry (areas / floors /
 
 ### Docker (recommended)
 
-Pull the pre-built image published to GHCR on every `v*` tag:
+Run the container:
 
 ```sh
 docker run -d --name hamcp \
@@ -180,6 +178,8 @@ docker run -d --name hamcp \
   -e HAMCP_HomeAssistant__BaseUrl=http://homeassistant.local:8123/ \
   -e HAMCP_HomeAssistant__AccessToken=YOUR_LONG_LIVED_TOKEN \
   -e HAMCP_HomeAssistant__ReadOnly=true \
+  -e HAMCP_HomeAssistant__AllowedEntities__0=light.kitchen \
+  -e HAMCP_Server__Password=change-me \
   ghcr.io/wixely/homeassistantmcpsharp:latest
 ```
 
@@ -206,7 +206,7 @@ sc.exe create HomeAssistantMCPSharp `
     binPath= "C:\Services\HomeAssistantMCPSharp\HomeAssistantMCPSharp.exe" `
     start= auto `
     DisplayName= "Home Assistant MCP (C#)"
-sc.exe description HomeAssistantMCPSharp "MCP server bridging Claude to Home Assistant."
+sc.exe description HomeAssistantMCPSharp "MCP server for Home Assistant."
 sc.exe start HomeAssistantMCPSharp
 ```
 
@@ -214,10 +214,12 @@ sc.exe start HomeAssistantMCPSharp
 
 Configure via one of:
 
-- `appsettings.json` — committed defaults.
-- `appsettings.Local.json` — gitignored local overrides (loaded automatically). Recommended for secrets like `AccessToken`.
+- `HomeAssistantMCPSharp.json` — committed defaults.
+- `HomeAssistantMCPSharp.Local.json` — gitignored local overrides (loaded automatically). Recommended for secrets like `AccessToken`.
 - Environment variables — prefix `HAMCP_`, with `__` as the section separator (e.g. `HAMCP_HomeAssistant__AccessToken`).
 - Command-line arguments.
+
+Environment variables override JSON. Arrays use numeric indexes, for example `HAMCP_HomeAssistant__AllowedEntities__0=light.kitchen`. Booleans use `true` or `false`.
 
 Create a long-lived access token in Home Assistant under your **profile → Security → Long-Lived Access Tokens**.
 
@@ -248,15 +250,9 @@ Create a long-lived access token in Home Assistant under your **profile → Secu
 
 When `Server:Password` is set, MCP requests must provide the password as `Authorization: Bearer <password>`, the Basic auth password, or `X-MCP-Password`.
 
-## Claude Code
-
-```sh
-claude mcp add --transport http home-assistant http://localhost:5703/mcp
-```
-
 ## Read-only mode
 
-Read-only is **on by default**. To enable write tools, set `HomeAssistant:ReadOnly=false`. With write enabled, an agent can call any tool flagged as a write — anything that actuates a device, calls a service, sets or deletes a state, fires an event, runs an automation / script / scene, plays media, speaks TTS, creates notifications, mutates an input helper, or invokes the conversation/intent pipeline.
+Read-only is **on by default**. To enable write tools, set `HomeAssistant:ReadOnly=false`. With write enabled, MCP clients can call any tool flagged as a write — anything that actuates a device, calls a service, sets or deletes a state, fires an event, runs an automation / script / scene, plays media, speaks TTS, creates notifications, mutates an input helper, or invokes the conversation/intent pipeline.
 
 For finer-grained control:
 
