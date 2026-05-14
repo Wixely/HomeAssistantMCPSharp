@@ -8,15 +8,21 @@ COPY HomeAssistantMCPSharp.csproj ./
 ARG TARGETARCH
 RUN arch="${TARGETARCH:-amd64}"; \
     if [ "$arch" = "amd64" ]; then arch="x64"; fi; \
-    dotnet restore HomeAssistantMCPSharp.csproj --arch "$arch"
+    rid="linux-$arch"; \
+    dotnet restore HomeAssistantMCPSharp.csproj \
+    -r "$rid" \
+    -p:PublishSingleFile=true \
+    -p:SelfContained=false \
+    -p:EnableCompressionInSingleFile=false
 
 COPY . .
 RUN arch="${TARGETARCH:-amd64}"; \
     if [ "$arch" = "amd64" ]; then arch="x64"; fi; \
+    rid="linux-$arch"; \
     dotnet publish HomeAssistantMCPSharp.csproj \
     -c Release \
     --no-restore \
-    --arch "$arch" \
+    -r "$rid" \
     --self-contained false \
     -o /app/publish \
     -p:PublishSingleFile=true \
