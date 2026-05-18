@@ -1,13 +1,31 @@
+using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using HomeAssistantMCPSharp.Configuration;
 using Microsoft.Extensions.Options;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 namespace HomeAssistantMCPSharp.Services;
 
 public sealed class DashboardYamlService
 {
     private readonly HomeAssistantOptions _options;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private static readonly ISerializer YamlSerializer = new SerializerBuilder()
+        .WithNamingConvention(NullNamingConvention.Instance)
+        .DisableAliases()
+        .Build();
+
+    private static readonly IDeserializer YamlDeserializer = new DeserializerBuilder()
+        .WithNamingConvention(NullNamingConvention.Instance)
+        .Build();
 
     public const string ResourceUri = "homeassistant://dashboard-yaml";
 
@@ -16,82 +34,98 @@ public sealed class DashboardYamlService
         _options = options.Value;
     }
 
-    public string ResolvePath()
+    public async Task<DashboardYamlSnapshot> ReadAsync(string? urlPath = null, bool force = false, CancellationToken ct = default)
     {
         EnsureEnabled();
 
-        var configuredPath = _options.DashboardYamlPath;
-        if (string.IsNullOrWhiteSpace(configuredPath))
+        var command = new Dictionary<string, object?>
         {
-            throw new InvalidOperationException(
-                "HomeAssistant:DashboardYamlPath is not configured. Set it to the dashboard YAML file path on the MCP host.");
+            ["type"] = "lovelace/config",
+            ["force"] = force,
+        };
+        if (!string.IsNullOrWhiteSpace(urlPath))
+        {
+            command["url_path"] = urlPath;
         }
 
-        var path = Path.GetFullPath(Environment.ExpandEnvironmentVariables(configuredPath));
-        var extension = Path.GetExtension(path);
-        if (!string.Equals(extension, ".yaml", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(extension, ".yml", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("HomeAssistant:DashboardYamlPath must point to a .yaml or .yml file.");
-        }
+        var config = await SendWebSocketCommandAsync(command, ct);
+        var normalized = NormalizeJson(config);
+        var yaml = YamlSerializer.Serialize(normalized);
 
-        return path;
+        return new DashboardYamlSnapshot(
+            string.IsNullOrWhiteSpace(urlPath) ? null : urlPath,
+            yaml,
+            ComputeSha256(yaml));
     }
 
-    public async Task<DashboardYamlSnapshot> ReadAsync(CancellationToken ct = default)
+    public async Task<DashboardYamlInfo> GetInfoAsync(string? urlPath = null, CancellationToken ct = default)
     {
-        var path = ResolvePath();
-        if (!File.Exists(path))
-        {
-            throw new FileNotFoundException("Dashboard YAML file was not found. Check HomeAssistant:DashboardYamlPath.", path);
-        }
+        var snapshot = await ReadAsync(urlPath, force: false, ct);
+        return new DashboardYamlInfo(
+            snapshot.UrlPath,
+            ResourceUri,
+            snapshot.Sha256,
+            Encoding.UTF8.GetByteCount(snapshot.Content));
+    }
 
-        var content = await File.ReadAllTextAsync(path, Encoding.UTF8, ct);
-        var info = new FileInfo(path);
-        return new DashboardYamlSnapshot(
-            path,
-            content,
-            ComputeSha256(content),
-            info.Length,
-            info.LastWriteTimeUtc);
+    public async Task<object?> ListDashboardsAsync(CancellationToken ct = default)
+    {
+        EnsureEnabled();
+
+        var result = await SendWebSocketCommandAsync(
+            new Dictionary<string, object?> { ["type"] = "lovelace/dashboards/list" },
+            ct);
+
+        return NormalizeJson(result);
     }
 
     public async Task<DashboardYamlWriteResult> WriteAsync(
         string content,
+        string? urlPath,
         string? expectedSha256,
-        bool createBackup,
         CancellationToken ct = default)
     {
         EnsureWriteAllowed("ha_update_dashboard_yaml");
 
-        var path = ResolvePath();
-        var oldHash = await VerifyExpectedHashAsync(path, expectedSha256, ct);
-        var backupPath = createBackup && File.Exists(path) ? CreateBackup(path) : null;
+        var current = await ReadAsync(urlPath, force: true, ct);
+        EnsureExpectedSha(current.Sha256, expectedSha256);
 
-        var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
+        var yamlObject = YamlDeserializer.Deserialize<object?>(content)
+            ?? throw new InvalidOperationException("Dashboard YAML must contain a mapping/object.");
+        var normalized = NormalizeYaml(yamlObject);
+
+        if (normalized is not IReadOnlyDictionary<string, object?>)
         {
-            Directory.CreateDirectory(directory);
+            throw new InvalidOperationException("Dashboard YAML root must be a mapping/object.");
         }
 
-        await File.WriteAllTextAsync(path, content, Encoding.UTF8, ct);
+        var config = JsonSerializer.SerializeToElement(normalized, JsonOptions);
+        var command = new Dictionary<string, object?>
+        {
+            ["type"] = "lovelace/config/save",
+            ["config"] = config,
+        };
+        if (!string.IsNullOrWhiteSpace(urlPath))
+        {
+            command["url_path"] = urlPath;
+        }
 
-        var info = new FileInfo(path);
+        await SendWebSocketCommandAsync(command, ct);
+
+        var written = await ReadAsync(urlPath, force: true, ct);
         return new DashboardYamlWriteResult(
-            path,
-            backupPath,
-            oldHash,
-            ComputeSha256(content),
-            info.Length,
-            info.LastWriteTimeUtc);
+            written.UrlPath,
+            current.Sha256,
+            written.Sha256,
+            Encoding.UTF8.GetByteCount(written.Content));
     }
 
     public async Task<DashboardYamlReplaceResult> ReplaceAsync(
         string oldText,
         string newText,
         bool replaceAll,
+        string? urlPath,
         string? expectedSha256,
-        bool createBackup,
         CancellationToken ct = default)
     {
         EnsureWriteAllowed("ha_replace_dashboard_yaml_text");
@@ -101,13 +135,8 @@ public sealed class DashboardYamlService
             throw new ArgumentException("oldText is required.", nameof(oldText));
         }
 
-        var snapshot = await ReadAsync(ct);
-        if (!string.IsNullOrWhiteSpace(expectedSha256) &&
-            !string.Equals(snapshot.Sha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException(
-                $"Dashboard YAML changed since it was read. Expected SHA-256 {expectedSha256}, current SHA-256 {snapshot.Sha256}.");
-        }
+        var snapshot = await ReadAsync(urlPath, force: true, ct);
+        EnsureExpectedSha(snapshot.Sha256, expectedSha256);
 
         var count = CountOccurrences(snapshot.Content, oldText);
         if (count == 0)
@@ -125,15 +154,82 @@ public sealed class DashboardYamlService
             ? snapshot.Content.Replace(oldText, newText, StringComparison.Ordinal)
             : ReplaceFirst(snapshot.Content, oldText, newText);
 
-        var write = await WriteAsync(updated, snapshot.Sha256, createBackup, ct);
+        var write = await WriteAsync(updated, urlPath, snapshot.Sha256, ct);
         return new DashboardYamlReplaceResult(
-            write.Path,
-            write.BackupPath,
+            write.UrlPath,
             snapshot.Sha256,
             write.Sha256,
             write.Length,
-            write.LastWriteTimeUtc,
             replaceAll ? count : 1);
+    }
+
+    private async Task<JsonElement> SendWebSocketCommandAsync(Dictionary<string, object?> command, CancellationToken ct)
+    {
+        var baseUri = new Uri(string.IsNullOrWhiteSpace(_options.BaseUrl)
+            ? "http://homeassistant.local:8123/"
+            : _options.BaseUrl);
+
+        var builder = new UriBuilder(baseUri)
+        {
+            Scheme = string.Equals(baseUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ? "wss" : "ws",
+            Path = "api/websocket",
+            Query = string.Empty,
+        };
+
+        using var socket = new ClientWebSocket();
+        if (_options.IgnoreCertificateErrors)
+        {
+            socket.Options.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+        }
+
+        await socket.ConnectAsync(builder.Uri, ct);
+
+        var authRequired = await ReceiveJsonAsync(socket, ct);
+        if (!IsMessageType(authRequired, "auth_required"))
+        {
+            throw new InvalidOperationException("Home Assistant WebSocket did not request authentication.");
+        }
+
+        if (string.IsNullOrWhiteSpace(_options.AccessToken))
+        {
+            throw new InvalidOperationException("HomeAssistant:AccessToken is required for Home Assistant WebSocket API access.");
+        }
+
+        await SendJsonAsync(socket, new
+        {
+            type = "auth",
+            access_token = _options.AccessToken,
+        }, ct);
+
+        var auth = await ReceiveJsonAsync(socket, ct);
+        if (IsMessageType(auth, "auth_invalid"))
+        {
+            var message = auth.TryGetProperty("message", out var authMessage) ? authMessage.GetString() : "invalid access token";
+            throw new InvalidOperationException($"Home Assistant WebSocket authentication failed: {message}");
+        }
+        if (!IsMessageType(auth, "auth_ok"))
+        {
+            throw new InvalidOperationException("Home Assistant WebSocket authentication did not complete.");
+        }
+
+        command["id"] = 1;
+        await SendJsonAsync(socket, command, ct);
+
+        while (true)
+        {
+            var message = await ReceiveJsonAsync(socket, ct);
+            if (!message.TryGetProperty("id", out var id) || id.GetInt32() != 1)
+            {
+                continue;
+            }
+
+            if (!message.TryGetProperty("success", out var success) || !success.GetBoolean())
+            {
+                throw new InvalidOperationException($"Home Assistant WebSocket command failed: {ReadError(message)}");
+            }
+
+            return message.TryGetProperty("result", out var result) ? result.Clone() : default;
+        }
     }
 
     private void EnsureEnabled()
@@ -155,36 +251,93 @@ public sealed class DashboardYamlService
         }
     }
 
-    private static async Task<string?> VerifyExpectedHashAsync(string path, string? expectedSha256, CancellationToken ct)
+    private static void EnsureExpectedSha(string currentSha256, string? expectedSha256)
     {
-        if (!File.Exists(path))
-        {
-            if (!string.IsNullOrWhiteSpace(expectedSha256))
-            {
-                throw new InvalidOperationException("Cannot verify expectedSha256 because the dashboard YAML file does not exist.");
-            }
-
-            return null;
-        }
-
-        var currentContent = await File.ReadAllTextAsync(path, Encoding.UTF8, ct);
-        var currentHash = ComputeSha256(currentContent);
         if (!string.IsNullOrWhiteSpace(expectedSha256) &&
-            !string.Equals(currentHash, expectedSha256, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(currentSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                $"Dashboard YAML changed since it was read. Expected SHA-256 {expectedSha256}, current SHA-256 {currentHash}.");
+                $"Dashboard YAML changed since it was read. Expected SHA-256 {expectedSha256}, current SHA-256 {currentSha256}.");
+        }
+    }
+
+    private static async Task SendJsonAsync(ClientWebSocket socket, object message, CancellationToken ct)
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(message, JsonOptions);
+        await socket.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, ct);
+    }
+
+    private static async Task<JsonElement> ReceiveJsonAsync(ClientWebSocket socket, CancellationToken ct)
+    {
+        using var stream = new MemoryStream();
+        var buffer = new byte[8192];
+
+        while (true)
+        {
+            var result = await socket.ReceiveAsync(buffer, ct);
+            if (result.MessageType == WebSocketMessageType.Close)
+            {
+                throw new InvalidOperationException("Home Assistant closed the WebSocket connection.");
+            }
+
+            stream.Write(buffer, 0, result.Count);
+            if (result.EndOfMessage)
+            {
+                break;
+            }
         }
 
-        return currentHash;
+        using var doc = JsonDocument.Parse(stream.ToArray());
+        return doc.RootElement.Clone();
     }
 
-    private static string CreateBackup(string path)
+    private static bool IsMessageType(JsonElement message, string type) =>
+        message.TryGetProperty("type", out var messageType) &&
+        string.Equals(messageType.GetString(), type, StringComparison.OrdinalIgnoreCase);
+
+    private static string ReadError(JsonElement message)
     {
-        var backupPath = $"{path}.{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.bak";
-        File.Copy(path, backupPath, overwrite: false);
-        return backupPath;
+        if (!message.TryGetProperty("error", out var error))
+        {
+            return JsonSerializer.Serialize(message, JsonOptions);
+        }
+
+        if (error.ValueKind == JsonValueKind.Object)
+        {
+            var code = error.TryGetProperty("code", out var codeEl) ? codeEl.GetString() : null;
+            var errMessage = error.TryGetProperty("message", out var messageEl) ? messageEl.GetString() : null;
+            return string.IsNullOrWhiteSpace(code) ? errMessage ?? JsonSerializer.Serialize(error, JsonOptions) : $"{code}: {errMessage}";
+        }
+
+        return JsonSerializer.Serialize(error, JsonOptions);
     }
+
+    private static object? NormalizeJson(JsonElement element) =>
+        element.ValueKind switch
+        {
+            JsonValueKind.Object => element.EnumerateObject()
+                .ToDictionary(prop => prop.Name, prop => NormalizeJson(prop.Value), StringComparer.Ordinal),
+            JsonValueKind.Array => element.EnumerateArray().Select(NormalizeJson).ToList(),
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number when element.TryGetInt64(out var longValue) => longValue,
+            JsonValueKind.Number when element.TryGetDouble(out var doubleValue) => doubleValue,
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            _ => element.GetRawText(),
+        };
+
+    private static object? NormalizeYaml(object? value) =>
+        value switch
+        {
+            null => null,
+            IDictionary<object, object> dict => dict.ToDictionary(
+                pair => Convert.ToString(pair.Key, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
+                pair => NormalizeYaml(pair.Value),
+                StringComparer.Ordinal),
+            IEnumerable<object?> list when value is not string => list.Select(NormalizeYaml).ToList(),
+            _ => value,
+        };
 
     private static string ComputeSha256(string content)
     {
@@ -215,25 +368,25 @@ public sealed class DashboardYamlService
 }
 
 public sealed record DashboardYamlSnapshot(
-    string Path,
+    string? UrlPath,
     string Content,
+    string Sha256);
+
+public sealed record DashboardYamlInfo(
+    string? UrlPath,
+    string ResourceUri,
     string Sha256,
-    long Length,
-    DateTime LastWriteTimeUtc);
+    int Length);
 
 public sealed record DashboardYamlWriteResult(
-    string Path,
-    string? BackupPath,
-    string? PreviousSha256,
-    string Sha256,
-    long Length,
-    DateTime LastWriteTimeUtc);
-
-public sealed record DashboardYamlReplaceResult(
-    string Path,
-    string? BackupPath,
+    string? UrlPath,
     string PreviousSha256,
     string Sha256,
-    long Length,
-    DateTime LastWriteTimeUtc,
+    int Length);
+
+public sealed record DashboardYamlReplaceResult(
+    string? UrlPath,
+    string PreviousSha256,
+    string Sha256,
+    int Length,
     int Replacements);

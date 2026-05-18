@@ -2,7 +2,7 @@
 
 A standalone C# **MCP (Model Context Protocol) server** for **Home Assistant** over Streamable HTTP.
 
-Exposes **89 tools** across state, services, history, registry (areas / floors / labels), media + TTS, automations / scripts / scenes, presence, weather, energy, device health, sun, input helpers, notifications, and local dashboard YAML editing.
+Exposes **90 tools** across state, services, history, registry (areas / floors / labels), media + TTS, automations / scripts / scenes, presence, weather, energy, device health, sun, input helpers, notifications, and dashboard YAML editing.
 
 ## Highlights
 
@@ -10,7 +10,7 @@ Exposes **89 tools** across state, services, history, registry (areas / floors /
 - **Read-only by default** — every write tool is blocked until `HomeAssistant:ReadOnly` is set to `false`.
 - Per-feature toggles (`EnableStates`, `EnableServices`, `EnableHistory`, `EnableLogbook`, `EnableTemplate`, `EnableConversation`, `EnableCalendar`, `EnableDiagnostics`, `EnableEvents`, `EnableRegistry`, `EnableShortcuts`, `EnableNotifications`, `EnableEnergy`, `EnableDashboardYaml`); plus `EnableCameraSnapshot` (off by default).
 - Entity and domain allow/deny lists.
-- Configured dashboard YAML can be read as an MCP resource (`homeassistant://dashboard-yaml`) and edited through write-gated tools.
+- Home Assistant Lovelace dashboard config can be read as YAML through an MCP resource (`homeassistant://dashboard-yaml`) and edited through write-gated tools.
 - Serilog logging to console **and** rolling files (daily, 50 MB rollover, 14-file retention).
 - Runs as a Docker container, a Windows Service, or a console app.
 - Registry data (areas, floors, labels) is fetched through Home Assistant templates because the registry has no direct REST route.
@@ -43,17 +43,18 @@ Exposes **89 tools** across state, services, history, registry (areas / floors /
 | `ha_error_log` | `GET /api/error_log` | read |
 | `ha_server_info` | _(local)_ | read |
 
-### Dashboard YAML (local file on the MCP host)
+### Dashboard YAML (Home Assistant Lovelace)
 
 | Tool / resource | Notes |
 | --- | --- |
-| `homeassistant://dashboard-yaml` | MCP resource containing the configured dashboard YAML text. |
-| `ha_get_dashboard_yaml_info` | Returns path, size, last modified time, and SHA-256. |
-| `ha_get_dashboard_yaml` | Reads the full YAML content plus SHA-256 for safe edits. |
-| `ha_update_dashboard_yaml` | Replaces the full YAML file. Requires `ReadOnly=false`; creates a `.bak` copy by default. |
-| `ha_replace_dashboard_yaml_text` | Replaces exact text in the YAML file. Requires `ReadOnly=false`; rejects ambiguous single replacements. |
+| `homeassistant://dashboard-yaml` | MCP resource containing the default Lovelace dashboard config rendered as YAML. |
+| `ha_list_dashboards` | Lists Lovelace dashboards and their `url_path` values so clients know what to pass as `urlPath`. |
+| `ha_get_dashboard_yaml_info` | Returns dashboard URL path, resource URI, content size, and SHA-256. |
+| `ha_get_dashboard_yaml` | Reads a Lovelace dashboard config through Home Assistant's WebSocket API and renders it as YAML. |
+| `ha_update_dashboard_yaml` | Parses YAML and saves it through `lovelace/config/save`. Requires `ReadOnly=false`. |
+| `ha_replace_dashboard_yaml_text` | Replaces exact text in the rendered YAML, parses it, then saves through Home Assistant. Requires `ReadOnly=false`; rejects ambiguous single replacements. |
 
-Set `HomeAssistant:DashboardYamlPath` to the dashboard file path visible to this MCP process. The default is `/config/ui-lovelace.yaml`, which matches common Home Assistant container mounts. If this MCP server runs in its own container, mount your HA config directory into the container first.
+These tools do not read or write local files. They use Home Assistant's `/api/websocket` Lovelace commands. Call `ha_list_dashboards` first, then pass a returned `url_path` as `urlPath` for a non-default dashboard, such as `lovelace-music`. Omit `urlPath` for the default dashboard. If Home Assistant reports the dashboard is YAML-mode and cannot be saved through the UI/WebSocket API, reads will still work but writes will be rejected by Home Assistant.
 
 ### Discovery & search (cheap projections over `/api/states` and `/api/services`)
 
@@ -253,7 +254,6 @@ Create a long-lived access token in Home Assistant under your **profile → Secu
 | `HomeAssistant:AttributeValueTruncate` | `512` | Truncate state-attribute strings longer than this in `ha_list_states` output. |
 | `HomeAssistant:ConversationLanguage` | `en` | Default language for `ha_conversation_process`. |
 | `HomeAssistant:Enable*` | `true` | Per-feature tool toggles: `EnableStates`, `EnableServices`, `EnableHistory`, `EnableLogbook`, `EnableTemplate`, `EnableConversation`, `EnableCalendar`, `EnableDiagnostics`, `EnableEvents`, `EnableRegistry`, `EnableShortcuts`, `EnableNotifications`, `EnableEnergy`, `EnableDashboardYaml`. |
-| `HomeAssistant:DashboardYamlPath` | `/config/ui-lovelace.yaml` | Local path to the dashboard YAML file on the MCP host/container. Must end in `.yaml` or `.yml`. |
 | `HomeAssistant:LowBatteryThresholdPct` | `20` | Battery percentage at or below which `ha_list_batteries` flags an entity as `low`. |
 | `HomeAssistant:EnableCameraSnapshot` | `false` | Off by default — `camera.snapshot` writes a file on the HA host. |
 | `HomeAssistant:WaitForStatePollSeconds` | `1` | Poll interval used by `ha_wait_for_state`. |
@@ -272,5 +272,5 @@ For finer-grained control:
 
 - Use **`AllowedEntities` / `BlockedEntities`** and **`AllowedDomains` / `BlockedDomains`** to restrict which entities and domains can be touched (applies to both reads and writes).
 - Use the **`Enable*` toggles** to turn off entire tool categories regardless of read/write mode.
-- `EnableDashboardYaml` only exposes the single configured `DashboardYamlPath`; callers cannot choose arbitrary filesystem paths.
+- `EnableDashboardYaml` exposes Lovelace dashboard config through Home Assistant's WebSocket API; it does not grant filesystem access.
 - `EnableCameraSnapshot` is off by default because `camera.snapshot` writes a file on the HA host's filesystem.

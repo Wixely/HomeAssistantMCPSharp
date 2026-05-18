@@ -29,7 +29,6 @@
     "EnableNotifications": true,
     "EnableEnergy": true,
     "EnableDashboardYaml": true,
-    "DashboardYamlPath": "/config/ui-lovelace.yaml",
     "LowBatteryThresholdPct": 20,
     "EnableCameraSnapshot": false,
     "WaitForStatePollSeconds": 1,
