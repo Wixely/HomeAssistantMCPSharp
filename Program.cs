@@ -190,8 +190,17 @@ public static class Program
         }
         startupLog.Information("  Content root: {ContentRoot}", contentRoot);
     }
-    private static string GetContentRoot() =>
-        Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+    private static string GetContentRoot()
+    {
+        // When launched as "dotnet HomeAssistantMCPSharp.dll", ProcessPath points to dotnet.exe.
+        // AppContext.BaseDirectory stays with the app binaries, where copied config files live.
+        if (!string.IsNullOrWhiteSpace(AppContext.BaseDirectory))
+        {
+            return AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        return Path.GetDirectoryName(Environment.ProcessPath) ?? Directory.GetCurrentDirectory();
+    }
 
     private static string ResolveConfigFile(string contentRoot, string fileName)
     {
