@@ -88,6 +88,12 @@ public sealed class HomeAssistantOptions
     /// <summary>Expose electricity / energy sensor helpers (list, summary, history).</summary>
     public bool EnableEnergy { get; set; } = true;
 
+    /// <summary>Expose the configured Home Assistant dashboard YAML file as MCP tools and a resource.</summary>
+    public bool EnableDashboardYaml { get; set; } = true;
+
+    /// <summary>Path to the Home Assistant dashboard YAML file on the MCP host, e.g. /config/ui-lovelace.yaml.</summary>
+    public string DashboardYamlPath { get; set; } = "/config/ui-lovelace.yaml";
+
     /// <summary>Battery percentage at or below which ha_list_batteries flags an entity as 'low'.</summary>
     public int LowBatteryThresholdPct { get; set; } = 20;
 

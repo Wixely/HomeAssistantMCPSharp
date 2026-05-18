@@ -2,14 +2,15 @@
 
 A standalone C# **MCP (Model Context Protocol) server** for **Home Assistant** over Streamable HTTP.
 
-Exposes **85 tools** across state, services, history, registry (areas / floors / labels), media + TTS, automations / scripts / scenes, presence, weather, energy, device health, sun, input helpers, and notifications.
+Exposes **89 tools** across state, services, history, registry (areas / floors / labels), media + TTS, automations / scripts / scenes, presence, weather, energy, device health, sun, input helpers, notifications, and local dashboard YAML editing.
 
 ## Highlights
 
 - HTTP MCP server using the Streamable HTTP transport.
 - **Read-only by default** — every write tool is blocked until `HomeAssistant:ReadOnly` is set to `false`.
-- Per-feature toggles (`EnableStates`, `EnableServices`, `EnableHistory`, `EnableLogbook`, `EnableTemplate`, `EnableConversation`, `EnableCalendar`, `EnableDiagnostics`, `EnableEvents`, `EnableRegistry`, `EnableShortcuts`, `EnableNotifications`, `EnableEnergy`); plus `EnableCameraSnapshot` (off by default).
+- Per-feature toggles (`EnableStates`, `EnableServices`, `EnableHistory`, `EnableLogbook`, `EnableTemplate`, `EnableConversation`, `EnableCalendar`, `EnableDiagnostics`, `EnableEvents`, `EnableRegistry`, `EnableShortcuts`, `EnableNotifications`, `EnableEnergy`, `EnableDashboardYaml`); plus `EnableCameraSnapshot` (off by default).
 - Entity and domain allow/deny lists.
+- Configured dashboard YAML can be read as an MCP resource (`homeassistant://dashboard-yaml`) and edited through write-gated tools.
 - Serilog logging to console **and** rolling files (daily, 50 MB rollover, 14-file retention).
 - Runs as a Docker container, a Windows Service, or a console app.
 - Registry data (areas, floors, labels) is fetched through Home Assistant templates because the registry has no direct REST route.
@@ -41,6 +42,18 @@ Exposes **85 tools** across state, services, history, registry (areas / floors /
 | `ha_intent_handle` | `POST /api/intent/handle` | write |
 | `ha_error_log` | `GET /api/error_log` | read |
 | `ha_server_info` | _(local)_ | read |
+
+### Dashboard YAML (local file on the MCP host)
+
+| Tool / resource | Notes |
+| --- | --- |
+| `homeassistant://dashboard-yaml` | MCP resource containing the configured dashboard YAML text. |
+| `ha_get_dashboard_yaml_info` | Returns path, size, last modified time, and SHA-256. |
+| `ha_get_dashboard_yaml` | Reads the full YAML content plus SHA-256 for safe edits. |
+| `ha_update_dashboard_yaml` | Replaces the full YAML file. Requires `ReadOnly=false`; creates a `.bak` copy by default. |
+| `ha_replace_dashboard_yaml_text` | Replaces exact text in the YAML file. Requires `ReadOnly=false`; rejects ambiguous single replacements. |
+
+Set `HomeAssistant:DashboardYamlPath` to the dashboard file path visible to this MCP process. The default is `/config/ui-lovelace.yaml`, which matches common Home Assistant container mounts. If this MCP server runs in its own container, mount your HA config directory into the container first.
 
 ### Discovery & search (cheap projections over `/api/states` and `/api/services`)
 
@@ -239,7 +252,8 @@ Create a long-lived access token in Home Assistant under your **profile → Secu
 | `HomeAssistant:DefaultLogbookHours` | `24` | Default `ha_logbook` window. |
 | `HomeAssistant:AttributeValueTruncate` | `512` | Truncate state-attribute strings longer than this in `ha_list_states` output. |
 | `HomeAssistant:ConversationLanguage` | `en` | Default language for `ha_conversation_process`. |
-| `HomeAssistant:Enable*` | `true` | Per-feature tool toggles: `EnableStates`, `EnableServices`, `EnableHistory`, `EnableLogbook`, `EnableTemplate`, `EnableConversation`, `EnableCalendar`, `EnableDiagnostics`, `EnableEvents`, `EnableRegistry`, `EnableShortcuts`, `EnableNotifications`, `EnableEnergy`. |
+| `HomeAssistant:Enable*` | `true` | Per-feature tool toggles: `EnableStates`, `EnableServices`, `EnableHistory`, `EnableLogbook`, `EnableTemplate`, `EnableConversation`, `EnableCalendar`, `EnableDiagnostics`, `EnableEvents`, `EnableRegistry`, `EnableShortcuts`, `EnableNotifications`, `EnableEnergy`, `EnableDashboardYaml`. |
+| `HomeAssistant:DashboardYamlPath` | `/config/ui-lovelace.yaml` | Local path to the dashboard YAML file on the MCP host/container. Must end in `.yaml` or `.yml`. |
 | `HomeAssistant:LowBatteryThresholdPct` | `20` | Battery percentage at or below which `ha_list_batteries` flags an entity as `low`. |
 | `HomeAssistant:EnableCameraSnapshot` | `false` | Off by default — `camera.snapshot` writes a file on the HA host. |
 | `HomeAssistant:WaitForStatePollSeconds` | `1` | Poll interval used by `ha_wait_for_state`. |
@@ -252,10 +266,11 @@ When `Server:Password` is set, MCP requests must provide the password as `Author
 
 ## Read-only mode
 
-Read-only is **on by default**. To enable write tools, set `HomeAssistant:ReadOnly=false`. With write enabled, MCP clients can call any tool flagged as a write — anything that actuates a device, calls a service, sets or deletes a state, fires an event, runs an automation / script / scene, plays media, speaks TTS, creates notifications, mutates an input helper, or invokes the conversation/intent pipeline.
+Read-only is **on by default**. To enable write tools, set `HomeAssistant:ReadOnly=false`. With write enabled, MCP clients can call any tool flagged as a write — anything that actuates a device, calls a service, sets or deletes a state, fires an event, runs an automation / script / scene, plays media, speaks TTS, creates notifications, mutates an input helper, edits the configured dashboard YAML, or invokes the conversation/intent pipeline.
 
 For finer-grained control:
 
 - Use **`AllowedEntities` / `BlockedEntities`** and **`AllowedDomains` / `BlockedDomains`** to restrict which entities and domains can be touched (applies to both reads and writes).
 - Use the **`Enable*` toggles** to turn off entire tool categories regardless of read/write mode.
+- `EnableDashboardYaml` only exposes the single configured `DashboardYamlPath`; callers cannot choose arbitrary filesystem paths.
 - `EnableCameraSnapshot` is off by default because `camera.snapshot` writes a file on the HA host's filesystem.

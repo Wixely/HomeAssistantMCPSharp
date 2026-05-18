@@ -22,3 +22,5 @@ services:
       - ./logs:/app/logs
       # Mount a HomeAssistantMCPSharp.Local.json for richer overrides if you prefer files over env vars.
       # - ./HomeAssistantMCPSharp.Local.json:/app/HomeAssistantMCPSharp.Local.json:ro
+      # To expose dashboard YAML, mount the HA config directory read/write and set ReadOnly=false for edits.
+      # - /path/to/homeassistant/config:/config

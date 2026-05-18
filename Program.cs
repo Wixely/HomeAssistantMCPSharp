@@ -72,6 +72,7 @@ public static class Program
                 builder.Configuration.GetSection(HomeAssistantOptions.SectionName));
             builder.Services.Configure<ServerOptions>(
                 builder.Configuration.GetSection(ServerOptions.SectionName));
+            builder.Services.AddSingleton<DashboardYamlService>();
 
             // Typed HttpClient for Home Assistant REST API
             builder.Services.AddHttpClient<HomeAssistantService>((sp, http) =>
@@ -106,7 +107,8 @@ public static class Program
             builder.Services
                 .AddMcpServer()
                 .WithHttpTransport()
-                .WithToolsFromAssembly();
+                .WithToolsFromAssembly()
+                .WithResourcesFromAssembly();
 
             var server = builder.Configuration.GetSection(ServerOptions.SectionName).Get<ServerOptions>() ?? new ServerOptions();
             builder.WebHost.ConfigureKestrel(k =>
