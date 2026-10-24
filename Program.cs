@@ -192,14 +192,25 @@ public static class Program
     }
     private static string GetContentRoot()
     {
-        // When launched as "dotnet HomeAssistantMCPSharp.dll", ProcessPath points to dotnet.exe.
-        // AppContext.BaseDirectory stays with the app binaries, where copied config files live.
+        // Prefer the executable's folder: single-file builds with IncludeAllContentForSelfExtract
+        // set AppContext.BaseDirectory to a temp extraction folder, which would hide the
+        // HomeAssistantMCPSharp.json sitting next to the exe.
+        // When launched as "dotnet HomeAssistantMCPSharp.dll", ProcessPath points to dotnet.exe,
+        // so fall back to AppContext.BaseDirectory, which stays with the app binaries.
+        var processPath = Environment.ProcessPath;
+        var isDotnetHost = string.Equals(
+            Path.GetFileNameWithoutExtension(processPath), "dotnet", StringComparison.OrdinalIgnoreCase);
+        if (!isDotnetHost && Path.GetDirectoryName(processPath) is { Length: > 0 } exeDir)
+        {
+            return exeDir;
+        }
+
         if (!string.IsNullOrWhiteSpace(AppContext.BaseDirectory))
         {
             return AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
-        return Path.GetDirectoryName(Environment.ProcessPath) ?? Directory.GetCurrentDirectory();
+        return Directory.GetCurrentDirectory();
     }
 
     private static string ResolveConfigFile(string contentRoot, string fileName)
