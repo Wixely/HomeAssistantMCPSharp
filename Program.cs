@@ -56,6 +56,10 @@ public static class Program
                 .AddEnvironmentVariables(prefix: "HAMCP_")
                 .AddCommandLine(args);
 
+            // Serilog resolves relative sink paths against the working directory, which is
+            // C:\Windows\System32 for a Windows Service. Anchor them to the content root instead.
+            builder.Configuration.AddInMemoryCollection(GetAnchoredSerilogPaths(builder.Configuration, contentRoot));
+
             if (isService)
             {
                 var svcOptions = builder.Configuration.GetSection(ServerOptions.SectionName).Get<ServerOptions>() ?? new ServerOptions();
@@ -211,6 +215,21 @@ public static class Program
         }
 
         return Directory.GetCurrentDirectory();
+    }
+
+    private static Dictionary<string, string?> GetAnchoredSerilogPaths(IConfiguration configuration, string contentRoot)
+    {
+        var overrides = new Dictionary<string, string?>();
+        foreach (var sink in configuration.GetSection("Serilog:WriteTo").GetChildren())
+        {
+            var pathSection = sink.GetSection("Args:path");
+            if (!string.IsNullOrWhiteSpace(pathSection.Value) && !Path.IsPathRooted(pathSection.Value))
+            {
+                overrides[pathSection.Path] = Path.GetFullPath(Path.Combine(contentRoot, pathSection.Value));
+            }
+        }
+
+        return overrides;
     }
 
     private static string ResolveConfigFile(string contentRoot, string fileName)

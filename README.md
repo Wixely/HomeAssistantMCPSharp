@@ -2,7 +2,7 @@
 
 A standalone C# **MCP (Model Context Protocol) server** for **Home Assistant** over Streamable HTTP.
 
-Exposes **90 tools** across state, services, history, registry (areas / floors / labels), media + TTS, automations / scripts / scenes, presence, weather, energy, device health, sun, input helpers, notifications, and dashboard YAML editing.
+Exposes **89 tools** across state, services, history, registry (areas / floors / labels), media + TTS, automations / scripts / scenes, presence, weather, energy, device health, sun, input helpers, notifications, and dashboard YAML editing.
 
 ## Highlights
 
@@ -23,7 +23,6 @@ Exposes **90 tools** across state, services, history, registry (areas / floors /
 | --- | --- | --- |
 | `ha_ping` | `GET /api/` | read |
 | `ha_get_config` | `GET /api/config` | read |
-| `ha_discovery_info` | `GET /api/discovery_info` | read |
 | `ha_list_states` | `GET /api/states` | read |
 | `ha_get_state` | `GET /api/states/<entity_id>` | read |
 | `ha_set_state` | `POST /api/states/<entity_id>` | write |
