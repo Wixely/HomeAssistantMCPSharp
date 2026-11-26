@@ -46,11 +46,11 @@ ENV DOTNET_ENVIRONMENT=Production \
     HAMCP_Server__Password= \
     HAMCP_HomeAssistant__ReadOnly=true
 
-RUN mkdir -p /app/logs && chown -R $APP_UID:0 /app
+RUN mkdir -p /app/logs /app/data && chown -R $APP_UID:0 /app
 COPY --from=build --chown=$APP_UID:0 /app/publish ./
 
 USER $APP_UID
 EXPOSE 5703
-VOLUME ["/app/logs"]
+VOLUME ["/app/logs", "/app/data"]
 
 ENTRYPOINT ["./HomeAssistantMCPSharp"]

@@ -107,6 +107,54 @@ public sealed class HomeAssistantOptions
     public string ConversationLanguage { get; set; } = "en";
 }
 
+public sealed class DevelopmentOptions
+{
+    public const string SectionName = "Development";
+
+    /// <summary>Expose read-only custom card, custom integration, and deployment inventory tools.</summary>
+    public bool EnableInspection { get; set; } = false;
+
+    /// <summary>Allow staged deployment and rollback. HomeAssistant:ReadOnly must also be false.</summary>
+    public bool EnableDeployment { get; set; } = false;
+
+    /// <summary>Allow separately confirmed Home Assistant restarts after integration deployment.</summary>
+    public bool EnableRestart { get; set; } = false;
+
+    /// <summary>None, Local, or Sftp.</summary>
+    public string Transport { get; set; } = "None";
+
+    /// <summary>Home Assistant configuration directory for the Local transport.</summary>
+    public string LocalConfigRoot { get; set; } = string.Empty;
+
+    /// <summary>Persistent staging and rollback data, relative to the executable unless absolute.</summary>
+    public string DataPath { get; set; } = "data/deployments";
+
+    public int MaxChunkBytes { get; set; } = 262144;
+    public int MaxFileBytes { get; set; } = 8388608;
+    public int MaxPackageBytes { get; set; } = 33554432;
+    public int SessionLifetimeMinutes { get; set; } = 60;
+    public int ConfirmationLifetimeMinutes { get; set; } = 10;
+    public int RestartTimeoutSeconds { get; set; } = 180;
+    public int MaxLogCharacters { get; set; } = 32768;
+    public SftpDevelopmentOptions Sftp { get; set; } = new();
+}
+
+public sealed class SftpDevelopmentOptions
+{
+    public string Host { get; set; } = string.Empty;
+    public int Port { get; set; } = 22;
+    public string Username { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public string PrivateKeyPath { get; set; } = string.Empty;
+    public string PrivateKeyPassphrase { get; set; } = string.Empty;
+
+    /// <summary>Required SHA-256 host-key fingerprint, with or without separators.</summary>
+    public string HostKeySha256 { get; set; } = string.Empty;
+
+    /// <summary>Absolute Home Assistant configuration directory on the SFTP server.</summary>
+    public string ConfigRoot { get; set; } = string.Empty;
+}
+
 public sealed class ServerOptions
 {
     public const string SectionName = "Server";

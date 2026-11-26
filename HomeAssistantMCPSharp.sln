@@ -4,6 +4,8 @@ VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HomeAssistantMCPSharp", "HomeAssistantMCPSharp.csproj", "{B72E51D3-9C7E-4F2A-8E1D-3B5C4D6E7F90}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HomeAssistantMCPSharp.Tests", "tests\HomeAssistantMCPSharp.Tests\HomeAssistantMCPSharp.Tests.csproj", "{9C0F5CC5-F1C7-49BB-BB62-EF224B12D69D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -14,6 +16,10 @@ Global
 		{B72E51D3-9C7E-4F2A-8E1D-3B5C4D6E7F90}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B72E51D3-9C7E-4F2A-8E1D-3B5C4D6E7F90}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B72E51D3-9C7E-4F2A-8E1D-3B5C4D6E7F90}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9C0F5CC5-F1C7-49BB-BB62-EF224B12D69D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9C0F5CC5-F1C7-49BB-BB62-EF224B12D69D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9C0F5CC5-F1C7-49BB-BB62-EF224B12D69D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9C0F5CC5-F1C7-49BB-BB62-EF224B12D69D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -76,7 +76,12 @@ public static class Program
                 builder.Configuration.GetSection(HomeAssistantOptions.SectionName));
             builder.Services.Configure<ServerOptions>(
                 builder.Configuration.GetSection(ServerOptions.SectionName));
+            builder.Services.Configure<DevelopmentOptions>(
+                builder.Configuration.GetSection(DevelopmentOptions.SectionName));
+            builder.Services.AddSingleton<HomeAssistantWebSocketClient>();
             builder.Services.AddSingleton<DashboardYamlService>();
+            builder.Services.AddSingleton<ConfigRootTransportFactory>();
+            builder.Services.AddSingleton<HomeAssistantDevelopmentService>();
 
             // Typed HttpClient for Home Assistant REST API
             builder.Services.AddHttpClient<HomeAssistantService>((sp, http) =>

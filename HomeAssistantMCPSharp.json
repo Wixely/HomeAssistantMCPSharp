@@ -35,6 +35,31 @@
     "WaitForStateMaxSeconds": 60,
     "ConversationLanguage": "en"
   },
+  "Development": {
+    "EnableInspection": false,
+    "EnableDeployment": false,
+    "EnableRestart": false,
+    "Transport": "None",
+    "LocalConfigRoot": "",
+    "DataPath": "data/deployments",
+    "MaxChunkBytes": 262144,
+    "MaxFileBytes": 8388608,
+    "MaxPackageBytes": 33554432,
+    "SessionLifetimeMinutes": 60,
+    "ConfirmationLifetimeMinutes": 10,
+    "RestartTimeoutSeconds": 180,
+    "MaxLogCharacters": 32768,
+    "Sftp": {
+      "Host": "",
+      "Port": 22,
+      "Username": "",
+      "Password": "",
+      "PrivateKeyPath": "",
+      "PrivateKeyPassphrase": "",
+      "HostKeySha256": "",
+      "ConfigRoot": ""
+    }
+  },
   "Server": {
     "Host": "localhost",
     "Port": 5703,

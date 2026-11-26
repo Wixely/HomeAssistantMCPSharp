@@ -9,6 +9,7 @@ artifacts/
 # Logs
 logs/
 *.log
+data/
 
 # Local secrets / overrides
 appsettings.Development.json
