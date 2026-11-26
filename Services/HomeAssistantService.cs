@@ -93,6 +93,37 @@ public sealed class HomeAssistantService
     public Task<string> GetStringAsync(string path, CancellationToken ct = default)
         => SendRawAsync(HttpMethod.Get, path, content: null, ct);
 
+    public async Task<byte[]> GetBytesAsync(string path, int maxBytes = 8 * 1024 * 1024, CancellationToken ct = default)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, path);
+        using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!resp.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(
+                $"Home Assistant returned {(int)resp.StatusCode} {resp.ReasonPhrase} for GET {path}");
+        }
+
+        if (resp.Content.Headers.ContentLength > maxBytes)
+        {
+            throw new InvalidOperationException($"Home Assistant response exceeds the {maxBytes}-byte limit.");
+        }
+
+        await using var source = await resp.Content.ReadAsStreamAsync(ct);
+        using var output = new MemoryStream();
+        var buffer = new byte[81920];
+        while (true)
+        {
+            var read = await source.ReadAsync(buffer, ct);
+            if (read == 0) break;
+            if (output.Length + read > maxBytes)
+            {
+                throw new InvalidOperationException($"Home Assistant response exceeds the {maxBytes}-byte limit.");
+            }
+            output.Write(buffer, 0, read);
+        }
+        return output.ToArray();
+    }
+
     // POST helpers -------------------------------------------------------
 
     public Task<JsonElement> PostJsonAsync(string path, object? body, CancellationToken ct = default)

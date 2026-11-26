@@ -2,7 +2,7 @@
 
 A standalone C# **MCP (Model Context Protocol) server** for **Home Assistant** over Streamable HTTP.
 
-Exposes **89 tools** across state, services, history, registry (areas / floors / labels), media + TTS, automations / scripts / scenes, presence, weather, energy, device health, sun, input helpers, notifications, and dashboard YAML editing.
+Exposes **105 tools** across state, services, history, registry (areas / floors / labels), media + TTS, automations / scripts / scenes, presence, weather, energy, device health, sun, input helpers, notifications, dashboard YAML editing, and guarded custom-card/integration development.
 
 ## Highlights
 
@@ -11,6 +11,7 @@ Exposes **89 tools** across state, services, history, registry (areas / floors /
 - Per-feature toggles (`EnableStates`, `EnableServices`, `EnableHistory`, `EnableLogbook`, `EnableTemplate`, `EnableConversation`, `EnableCalendar`, `EnableDiagnostics`, `EnableEvents`, `EnableRegistry`, `EnableShortcuts`, `EnableNotifications`, `EnableEnergy`, `EnableDashboardYaml`); plus `EnableCameraSnapshot` (off by default).
 - Entity and domain allow/deny lists.
 - Home Assistant Lovelace dashboard config can be read as YAML through an MCP resource (`homeassistant://dashboard-yaml`) and edited through write-gated tools.
+- Optional development tools inspect, stage, preview, deploy, verify, and roll back custom cards and integrations through a scoped local or SFTP configuration root.
 - Serilog logging to console **and** rolling files (daily, 50 MB rollover, 14-file retention).
 - Runs as a Docker container, a Windows Service, or a console app.
 - Registry data (areas, floors, labels) is fetched through Home Assistant templates because the registry has no direct REST route.
@@ -54,6 +55,28 @@ Exposes **89 tools** across state, services, history, registry (areas / floors /
 | `ha_replace_dashboard_yaml_text` | Replaces exact text in the rendered YAML, parses it, then saves through Home Assistant. Requires `ReadOnly=false`; rejects ambiguous single replacements. |
 
 These tools do not read or write local files. They use Home Assistant's `/api/websocket` Lovelace commands. Call `ha_list_dashboards` first, then pass a returned `url_path` as `urlPath` for a non-default dashboard, such as `lovelace-music`. Omit `urlPath` for the default dashboard. If Home Assistant reports the dashboard is YAML-mode and cannot be saved through the UI/WebSocket API, reads will still work but writes will be rejected by Home Assistant.
+
+### Custom card and integration development
+
+Development tools are disabled by default. They expose only `www/<package>` and `custom_components/<domain>` through a configured local or SFTP transport. They do not provide general filesystem, SSH, shell, archive extraction, `.storage`, or YAML configuration access.
+
+| Tool | Purpose |
+| --- | --- |
+| `ha_dev_get_environment` | Report Home Assistant health, transport capability, gates, and transfer limits. |
+| `ha_dev_list_custom_cards` / `ha_dev_get_custom_card` | Inspect deployed card files, hashes, and Lovelace resources. |
+| `ha_dev_list_custom_integrations` / `ha_dev_get_custom_integration` | Inspect integration manifests, files, config entries, and bounded matching logs. |
+| `ha_dev_begin_deployment` | Start a time-limited `custom_card` or `custom_integration` staging session. |
+| `ha_dev_put_deployment_file` | Upload one ordered Base64 chunk with final length and SHA-256 verification. |
+| `ha_dev_preview_deployment` | Validate the package, compare target hashes, and issue a short-lived apply token. |
+| `ha_dev_apply_deployment` | Recheck the preview, save a rollback snapshot, replace files, and register or validate the result. |
+| `ha_dev_verify_deployment` | Verify served card bytes or return integration config entries and bounded logs. |
+| `ha_dev_preview_rollback` / `ha_dev_rollback_deployment` | Refuse stale targets, then restore the saved snapshot with a separate token. |
+| `ha_dev_prepare_restart` / `ha_dev_restart_and_verify` | Confirm, restart, wait for Core health, and verify an integration deployment. |
+| `ha_dev_list_deployments` / `ha_dev_get_deployment` | Inspect persisted deployment state without returning staged or backup contents. |
+
+Card deployment writes a module beneath `www`, then creates or updates its storage-mode Lovelace resource with a content-hash query value. Integration deployment checks `manifest.json`, JSON syntax, file types, package size, and hashes before writing. It then calls `POST /api/config/core/check_config`. Python changes are reported as restart-required; the deployment tool does not claim hot reload.
+
+Each mutation requires `HomeAssistant:ReadOnly=false`, `Development:EnableInspection=true`, and `Development:EnableDeployment=true`. Restart also requires `Development:EnableRestart=true`. Apply, rollback, and restart use short-lived action-specific confirmation tokens. A rollback is refused when files have changed since apply.
 
 ### Discovery & search (cheap projections over `/api/states` and `/api/services`)
 
@@ -260,6 +283,16 @@ Create a long-lived access token in Home Assistant under your **profile → Secu
 | `Server:Host` / `Port` / `Path` | `localhost` / `5703` / `/mcp` | HTTP bind details. Use `0.0.0.0` inside Docker. |
 | `Server:WindowsServiceName` | `HomeAssistantMCPSharp` | SCM service name. |
 | `Server:Password` | blank | Optional MCP endpoint password; blank disables password auth. |
+| `Development:EnableInspection` | `false` | Expose read-only development inventory and deployment records. |
+| `Development:EnableDeployment` | `false` | Allow staged apply and rollback when Home Assistant write mode is also enabled. |
+| `Development:EnableRestart` | `false` | Allow separately confirmed Core restarts after integration deployment. |
+| `Development:Transport` | `None` | `None`, `Local`, or `Sftp`. |
+| `Development:LocalConfigRoot` | blank | Existing Home Assistant configuration directory for the local transport. |
+| `Development:DataPath` | `data/deployments` | Persistent staging, metadata, and rollback snapshots. Keep this outside Home Assistant's configuration tree. |
+| `Development:MaxChunkBytes` | `262144` | Maximum decoded upload chunk. |
+| `Development:MaxFileBytes` | `8388608` | Maximum staged file. |
+| `Development:MaxPackageBytes` | `33554432` | Maximum complete package and rollback snapshot. |
+| `Development:Sftp:*` | blank | SFTP host, port, username, credential, required SHA-256 host-key fingerprint, and absolute configuration root. |
 
 When `Server:Password` is set, MCP requests must provide the password as `Authorization: Bearer <password>`, the Basic auth password, or `X-MCP-Password`.
 
@@ -273,3 +306,33 @@ For finer-grained control:
 - Use the **`Enable*` toggles** to turn off entire tool categories regardless of read/write mode.
 - `EnableDashboardYaml` exposes Lovelace dashboard config through Home Assistant's WebSocket API; it does not grant filesystem access.
 - `EnableCameraSnapshot` is off by default because `camera.snapshot` writes a file on the HA host's filesystem.
+- Development deployment has three independent gates and a separate scoped transport. Leave all three disabled on instances that only need normal Home Assistant management.
+
+### Development transport examples
+
+For a container with an intentionally mounted Home Assistant configuration directory:
+
+```yaml
+environment:
+  HAMCP_HomeAssistant__ReadOnly: "false"
+  HAMCP_Development__EnableInspection: "true"
+  HAMCP_Development__EnableDeployment: "true"
+  HAMCP_Development__Transport: "Local"
+  HAMCP_Development__LocalConfigRoot: "/homeassistant"
+volumes:
+  - hamcp-development-data:/app/data
+  - /path/to/homeassistant/config:/homeassistant
+```
+
+For SFTP, keep the password or private-key passphrase in an environment variable or `HomeAssistantMCPSharp.Local.json`. Pin the server's SHA-256 host-key fingerprint; the client refuses an unpinned or changed key.
+
+```text
+HAMCP_Development__Transport=Sftp
+HAMCP_Development__Sftp__Host=ha.example.com
+HAMCP_Development__Sftp__Username=hamcp-deployer
+HAMCP_Development__Sftp__Password=<password>
+HAMCP_Development__Sftp__HostKeySha256=<sha256-host-key-fingerprint-in-hex>
+HAMCP_Development__Sftp__ConfigRoot=/srv/homeassistant/config
+```
+
+Give the deployment account access only to the intended `www` and `custom_components` trees when the host permits it. Keep the configured root accurate because the bridge applies its path restrictions relative to that root.

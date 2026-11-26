@@ -1,4 +1,3 @@
-using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -12,6 +11,7 @@ namespace HomeAssistantMCPSharp.Services;
 public sealed class DashboardYamlService
 {
     private readonly HomeAssistantOptions _options;
+    private readonly HomeAssistantWebSocketClient _webSocket;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -29,9 +29,12 @@ public sealed class DashboardYamlService
 
     public const string ResourceUri = "homeassistant://dashboard-yaml";
 
-    public DashboardYamlService(IOptions<HomeAssistantOptions> options)
+    public DashboardYamlService(
+        IOptions<HomeAssistantOptions> options,
+        HomeAssistantWebSocketClient webSocket)
     {
         _options = options.Value;
+        _webSocket = webSocket;
     }
 
     public async Task<DashboardYamlSnapshot> ReadAsync(string? urlPath = null, bool force = false, CancellationToken ct = default)
@@ -48,7 +51,7 @@ public sealed class DashboardYamlService
             command["url_path"] = urlPath;
         }
 
-        var config = await SendWebSocketCommandAsync(command, ct);
+        var config = await _webSocket.SendCommandAsync(command, ct);
         var normalized = NormalizeJson(config);
         var yaml = YamlSerializer.Serialize(normalized);
 
@@ -72,7 +75,7 @@ public sealed class DashboardYamlService
     {
         EnsureEnabled();
 
-        var result = await SendWebSocketCommandAsync(
+        var result = await _webSocket.SendCommandAsync(
             new Dictionary<string, object?> { ["type"] = "lovelace/dashboards/list" },
             ct);
 
@@ -110,7 +113,7 @@ public sealed class DashboardYamlService
             command["url_path"] = urlPath;
         }
 
-        await SendWebSocketCommandAsync(command, ct);
+        await _webSocket.SendCommandAsync(command, ct);
 
         var written = await ReadAsync(urlPath, force: true, ct);
         return new DashboardYamlWriteResult(
@@ -163,75 +166,6 @@ public sealed class DashboardYamlService
             replaceAll ? count : 1);
     }
 
-    private async Task<JsonElement> SendWebSocketCommandAsync(Dictionary<string, object?> command, CancellationToken ct)
-    {
-        var baseUri = new Uri(string.IsNullOrWhiteSpace(_options.BaseUrl)
-            ? "http://homeassistant.local:8123/"
-            : _options.BaseUrl);
-
-        var builder = new UriBuilder(baseUri)
-        {
-            Scheme = string.Equals(baseUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ? "wss" : "ws",
-            Path = "api/websocket",
-            Query = string.Empty,
-        };
-
-        using var socket = new ClientWebSocket();
-        if (_options.IgnoreCertificateErrors)
-        {
-            socket.Options.RemoteCertificateValidationCallback = (_, _, _, _) => true;
-        }
-
-        await socket.ConnectAsync(builder.Uri, ct);
-
-        var authRequired = await ReceiveJsonAsync(socket, ct);
-        if (!IsMessageType(authRequired, "auth_required"))
-        {
-            throw new InvalidOperationException("Home Assistant WebSocket did not request authentication.");
-        }
-
-        if (string.IsNullOrWhiteSpace(_options.AccessToken))
-        {
-            throw new InvalidOperationException("HomeAssistant:AccessToken is required for Home Assistant WebSocket API access.");
-        }
-
-        await SendJsonAsync(socket, new
-        {
-            type = "auth",
-            access_token = _options.AccessToken,
-        }, ct);
-
-        var auth = await ReceiveJsonAsync(socket, ct);
-        if (IsMessageType(auth, "auth_invalid"))
-        {
-            var message = auth.TryGetProperty("message", out var authMessage) ? authMessage.GetString() : "invalid access token";
-            throw new InvalidOperationException($"Home Assistant WebSocket authentication failed: {message}");
-        }
-        if (!IsMessageType(auth, "auth_ok"))
-        {
-            throw new InvalidOperationException("Home Assistant WebSocket authentication did not complete.");
-        }
-
-        command["id"] = 1;
-        await SendJsonAsync(socket, command, ct);
-
-        while (true)
-        {
-            var message = await ReceiveJsonAsync(socket, ct);
-            if (!message.TryGetProperty("id", out var id) || id.GetInt32() != 1)
-            {
-                continue;
-            }
-
-            if (!message.TryGetProperty("success", out var success) || !success.GetBoolean())
-            {
-                throw new InvalidOperationException($"Home Assistant WebSocket command failed: {ReadError(message)}");
-            }
-
-            return message.TryGetProperty("result", out var result) ? result.Clone() : default;
-        }
-    }
-
     private void EnsureEnabled()
     {
         if (!_options.EnableDashboardYaml)
@@ -259,57 +193,6 @@ public sealed class DashboardYamlService
             throw new InvalidOperationException(
                 $"Dashboard YAML changed since it was read. Expected SHA-256 {expectedSha256}, current SHA-256 {currentSha256}.");
         }
-    }
-
-    private static async Task SendJsonAsync(ClientWebSocket socket, object message, CancellationToken ct)
-    {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(message, JsonOptions);
-        await socket.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, ct);
-    }
-
-    private static async Task<JsonElement> ReceiveJsonAsync(ClientWebSocket socket, CancellationToken ct)
-    {
-        using var stream = new MemoryStream();
-        var buffer = new byte[8192];
-
-        while (true)
-        {
-            var result = await socket.ReceiveAsync(buffer, ct);
-            if (result.MessageType == WebSocketMessageType.Close)
-            {
-                throw new InvalidOperationException("Home Assistant closed the WebSocket connection.");
-            }
-
-            stream.Write(buffer, 0, result.Count);
-            if (result.EndOfMessage)
-            {
-                break;
-            }
-        }
-
-        using var doc = JsonDocument.Parse(stream.ToArray());
-        return doc.RootElement.Clone();
-    }
-
-    private static bool IsMessageType(JsonElement message, string type) =>
-        message.TryGetProperty("type", out var messageType) &&
-        string.Equals(messageType.GetString(), type, StringComparison.OrdinalIgnoreCase);
-
-    private static string ReadError(JsonElement message)
-    {
-        if (!message.TryGetProperty("error", out var error))
-        {
-            return JsonSerializer.Serialize(message, JsonOptions);
-        }
-
-        if (error.ValueKind == JsonValueKind.Object)
-        {
-            var code = error.TryGetProperty("code", out var codeEl) ? codeEl.GetString() : null;
-            var errMessage = error.TryGetProperty("message", out var messageEl) ? messageEl.GetString() : null;
-            return string.IsNullOrWhiteSpace(code) ? errMessage ?? JsonSerializer.Serialize(error, JsonOptions) : $"{code}: {errMessage}";
-        }
-
-        return JsonSerializer.Serialize(error, JsonOptions);
     }
 
     private static object? NormalizeJson(JsonElement element) =>
