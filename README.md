@@ -251,7 +251,7 @@ sc.exe start HomeAssistantMCPSharp
 Configure via one of:
 
 - `HomeAssistantMCPSharp.json` — committed defaults.
-- `HomeAssistantMCPSharp.Local.json` — gitignored local overrides (loaded automatically). Recommended for secrets like `AccessToken`.
+- `HomeAssistantMCPSharp.Local.json` — gitignored local overrides (loaded automatically). Plaintext secrets in this file are encrypted on startup by default.
 - Environment variables — prefix `HAMCP_`, with `__` as the section separator (e.g. `HAMCP_HomeAssistant__AccessToken`).
 - Command-line arguments.
 
@@ -293,8 +293,19 @@ Create a long-lived access token in Home Assistant under your **profile → Secu
 | `Development:MaxFileBytes` | `8388608` | Maximum staged file. |
 | `Development:MaxPackageBytes` | `33554432` | Maximum complete package and rollback snapshot. |
 | `Development:Sftp:*` | blank | SFTP host, port, username, credential, required SHA-256 host-key fingerprint, and absolute configuration root. |
+| `SecretProtection:CredentialProtection` | `auto` | `dpapi-user` on Windows and `aesgcm-keyfile` elsewhere. Also accepts `dpapi-machine`, `aesgcm-keyfile`, or `none`. |
+| `SecretProtection:AutoProtectCredentials` | `true` | Encrypt plaintext secrets found in the configured local file and rewrite it atomically. |
+| `SecretProtection:KeyFilePath` | `data/master.key` | AES-GCM key file. Back it up and keep it separate from the protected configuration. |
 
 When `Server:Password` is set, MCP requests must provide the password as `Authorization: Bearer <password>`, the Basic auth password, or `X-MCP-Password`.
+
+### Encrypted local secrets
+
+You can put `HomeAssistant:AccessToken`, `Server:Password`, `Development:Sftp:Password`, or `Development:Sftp:PrivateKeyPassphrase` in `HomeAssistantMCPSharp.Local.json` as plaintext for the first startup. The server encrypts each value, removes the plaintext property, writes a matching `*Protected` value and `*ProtectionScheme`, then continues using the decrypted value in memory. The rewrite is atomic, although JSON comments and custom formatting are normalized.
+
+On Windows, `auto` uses DPAPI for the current account. A Windows Service must run as the account that first encrypted the file; alternatively, select `dpapi-machine` before the first startup. Linux, macOS, and containers use AES-256-GCM with `data/master.key`. The `data` directory is already persistent in the supplied Docker configuration. Back up the key: losing it makes the protected values unrecoverable.
+
+Environment variables and command-line values are runtime overrides. They are not copied into the local file or encrypted there. Set `SecretProtection:CredentialProtection` to `none` only when you intentionally want to keep file values as plaintext.
 
 ## Read-only mode
 
@@ -324,7 +335,7 @@ volumes:
   - /path/to/homeassistant/config:/homeassistant
 ```
 
-For SFTP, keep the password or private-key passphrase in an environment variable or `HomeAssistantMCPSharp.Local.json`. Pin the server's SHA-256 host-key fingerprint; the client refuses an unpinned or changed key.
+For SFTP, keep the password or private-key passphrase in an environment variable or the encrypted `HomeAssistantMCPSharp.Local.json`. Pin the server's SHA-256 host-key fingerprint; the client refuses an unpinned or changed key.
 
 ```text
 HAMCP_Development__Transport=Sftp

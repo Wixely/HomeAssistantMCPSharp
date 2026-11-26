@@ -169,3 +169,17 @@ public sealed class ServerOptions
     /// <summary>Optional MCP endpoint password. Blank disables MCP password auth.</summary>
     public string Password { get; set; } = string.Empty;
 }
+
+public sealed class SecretProtectionOptions
+{
+    public const string SectionName = "SecretProtection";
+
+    /// <summary>auto, dpapi-user, dpapi-machine, aesgcm-keyfile, or none.</summary>
+    public string CredentialProtection { get; set; } = "auto";
+
+    /// <summary>Replace plaintext secrets in the local configuration file on startup.</summary>
+    public bool AutoProtectCredentials { get; set; } = true;
+
+    /// <summary>AES-GCM key file, relative to the executable unless absolute.</summary>
+    public string KeyFilePath { get; set; } = "data/master.key";
+}
