@@ -67,6 +67,11 @@
     "WindowsServiceName": "HomeAssistantMCPSharp",
     "Password": ""
   },
+  "SecretProtection": {
+    "CredentialProtection": "auto",
+    "AutoProtectCredentials": true,
+    "KeyFilePath": "data/master.key"
+  },
   "Serilog": {
     "MinimumLevel": {
       "Default": "Information",

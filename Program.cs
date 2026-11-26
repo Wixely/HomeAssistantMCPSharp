@@ -56,6 +56,21 @@ public static class Program
                 .AddEnvironmentVariables(prefix: "HAMCP_")
                 .AddCommandLine(args);
 
+            var secretProtection = SecretProtectionBootstrapper.Apply(
+                builder.Configuration,
+                contentRoot,
+                Path.Combine(contentRoot, ResolveConfigFile(contentRoot, "HomeAssistantMCPSharp.Local.json")),
+                keyPath => Log.Warning(
+                    "Generated the AES-GCM master key at {KeyPath}. Back it up; protected secrets cannot be recovered without it.",
+                    keyPath));
+            if (secretProtection.ProtectedSecretCount > 0)
+            {
+                Log.Information(
+                    "Protected {SecretCount} plaintext configuration secret(s) using {ProtectionScheme}.",
+                    secretProtection.ProtectedSecretCount,
+                    secretProtection.ActiveScheme);
+            }
+
             // Serilog resolves relative sink paths against the working directory, which is
             // C:\Windows\System32 for a Windows Service. Anchor them to the content root instead.
             builder.Configuration.AddInMemoryCollection(GetAnchoredSerilogPaths(builder.Configuration, contentRoot));

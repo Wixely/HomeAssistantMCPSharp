@@ -21,5 +21,5 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
-      # Mount a HomeAssistantMCPSharp.Local.json for richer overrides if you prefer files over env vars.
-      # - ./HomeAssistantMCPSharp.Local.json:/app/HomeAssistantMCPSharp.Local.json:ro
+      # Keep this mount writable if it contains plaintext secrets so startup can encrypt it.
+      # - ./HomeAssistantMCPSharp.Local.json:/app/HomeAssistantMCPSharp.Local.json
